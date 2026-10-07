@@ -16,10 +16,11 @@ const norm=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(
 const countBy=(a,f)=>{const m={};a.forEach(x=>{const k=f(x);m[k]=(m[k]||0)+1});return m};
 const pct=(a,b)=>b?Math.round(a*100/b)+' %':'–';
 
-const S={sb:null,me:null,leads:[],calls:[],team:[],view:'mine',mode:'pipe',flt:'todo',q:'',lim:40,kl:{},open:null,adding:false,
+const S={sb:null,me:null,leads:[],calls:[],team:[],view:'mine',mode:(function(){try{return localStorage.getItem('bb_mode')||'pipe'}catch(e){return 'pipe'}})(),flt:'todo',q:'',lim:40,kl:{},open:null,adding:false,
   aq:'',af:'all',ast:'all',alim:100,imp:null,impTo:'',busy:null,att:{uid:'',region:'',dept:'',n:50},err:'',authTab:'in',msg:''};
 let rafId=0,timer=0;
 const isAdmin=()=>S.me&&S.me.role==='admin';
+const tgt=()=>S.viewAs||S.me.id;
 
 function toast(m){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,2600)}
 function editing(){const a=document.activeElement;return a&&(a.tagName==='TEXTAREA'||a.tagName==='INPUT')&&a.type!=='file'&&a.closest&&a.closest('.modal,.sheet,.lead')}
@@ -43,7 +44,7 @@ async function refresh(){
   try{await loadAll();sched()}catch(e){}
 }
 const nameOf=u=>{const p=S.team.find(x=>x.id===u);return p?(p.name||p.email):(u===S.me.id?(S.me.name||'Moi'):'—')};
-const mineList=()=>S.leads.filter(l=>l.owner===S.me.id);
+const mineList=()=>S.leads.filter(l=>l.owner===tgt());
 const poolList=()=>S.leads.filter(l=>!l.owner);
 const members=()=>S.team.filter(p=>p.role==='agent'||p.role==='admin');
 
@@ -107,7 +108,7 @@ async function setStatus(id,st){
   const old={...l};patchLocal(id,p);render();
   const {error}=await S.sb.from('leads').update(p).eq('id',id);
   if(error){patchLocal(id,old);render();toast("Erreur d'enregistrement");return}
-  if(st!=='À appeler'){const r=await S.sb.from('calls').insert({lead_id:id,user_id:S.me.id,status:st,day:today()});if(!r.error)S.calls.push({lead_id:id,user_id:S.me.id,status:st,day:today()})}
+  if(st!=='À appeler'&&!S.viewAs){const r=await S.sb.from('calls').insert({lead_id:id,user_id:S.me.id,status:st,day:today()});if(!r.error)S.calls.push({lead_id:id,user_id:S.me.id,status:st,day:today()})}
   toast(st==='Converti'?'Client converti 🎉':'Enregistré : '+st);sched();
 }
 async function saveField(id,p){
@@ -146,7 +147,7 @@ function search(L){
   return q?L.filter(x=>[x.name,x.city,x.dept,x.notes].join(' ').toLowerCase().includes(q)||(qd.length>2&&digits(x.phone).includes(qd))):L;
 }
 function toolbar(){
-  let h='<div class="row" style="margin-bottom:12px"><button class="btn primary" data-act="add">+ Nouveau prospect</button>';
+  let h='<div class="row" style="margin-bottom:12px">'+(S.viewAs?'':'<button class="btn primary" data-act="add">+ Nouveau prospect</button>');
   if(!isAdmin())h+='<label class="btn" style="cursor:pointer">Importer un Excel<input type="file" id="file" accept=".xlsx,.xls,.csv" hidden></label>';
   h+='<span class="seg" style="margin-left:auto"><button data-act="mode" data-v="pipe" aria-pressed="'+(S.mode==='pipe')+'">Pipeline</button><button data-act="mode" data-v="sheet" aria-pressed="'+(S.mode==='sheet')+'">Tableau</button><button data-act="mode" data-v="cards" aria-pressed="'+(S.mode==='cards')+'">Fiches</button></span></div>';
   if(!isAdmin()&&S.imp)h+='<div class="panel">'+impBody()+progress()+'</div>';
@@ -154,10 +155,10 @@ function toolbar(){
 }
 function viewMine(){
   const L=mineList(),t=today();
-  const cToday=S.calls.filter(c=>c.user_id===S.me.id&&c.day===t).length;
+  const cToday=S.calls.filter(c=>c.user_id===tgt()&&c.day===t).length;
   const c=countBy(L,x=>x.status);
   const due=L.filter(x=>x.status==='Rappeler'&&x.callback_at&&x.callback_at<=t);
-  let h='<h2>Mes appels</h2><p class="sub">Appelle, puis choisis le résultat. Chaque résultat compte un appel dans tes statistiques.</p>';
+  let h=(S.viewAs?'<div class="panel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Tu regardes le pipeline de '+esc(nameOf(S.viewAs))+'</b><button class="btn sm primary" data-act="unview">← Retour à la vue d’ensemble</button></div>':'')+'<h2>'+(S.viewAs?'Pipeline de '+esc(nameOf(S.viewAs)):'Mes appels')+'</h2><p class="sub">Appelle, puis choisis le résultat. Chaque résultat compte un appel dans tes statistiques.</p>';
   h+='<div class="kpis">'+kpi(cToday,"Appels aujourd'hui")+kpi(due.length,'Rappels à faire')+kpi(c['À appeler']||0,'Reste à appeler')+kpi(c['Intéressé']||0,'Intéressés','hot')+kpi(c['RDV fixé']||0,'RDV fixés','hot')+kpi(c['Converti']||0,'Convertis','hot')+kpi(L.length,'Mes numéros')+'</div>';
   h+=toolbar();
   if(!L.length)return h+'<div class="empty"><b>Aucun numéro pour le moment.</b><p>Aboubacar ou son associé va t’attribuer ta liste d’appels, ou importe ton propre fichier Excel.</p></div>';
@@ -238,7 +239,7 @@ function viewOver(){
   const sc=countBy(S.leads,x=>x.status),mx=Math.max(1,...ST.map(s=>sc[s]||0));
   h+='<div class="panel"><h3>Où en sont les numéros</h3><div class="scroll"><table><tbody>'+ST.map(s=>'<tr><td>'+pill(s)+'</td><td class="n">'+nf(sc[s]||0)+'</td><td style="width:40%"><div class="bar"><i style="width:'+Math.round((sc[s]||0)/mx*100)+'%"></i></div></td></tr>').join('')+'</tbody></table></div></div></div>';
   h+='<div class="panel"><h3>Par collaboratrice</h3><div class="scroll"><table><thead><tr><th>Nom</th><th class="n">Numéros</th><th class="n">Aujourd’hui</th><th class="n">7 jours</th><th class="n">Reste</th><th class="n">Rappels</th><th class="n">Intéressés</th><th class="n">RDV</th><th class="n">Convertis</th><th class="n">Taux</th></tr></thead><tbody>'+
-   (M.length?M.sort((a,b)=>b.calledToday-a.calledToday||b.called7-a.called7).map(m=>'<tr><td><b>'+esc(nameOf(m.u))+'</b></td><td class="n">'+nf(m.n)+'</td><td class="n">'+m.calledToday+'</td><td class="n">'+m.called7+'</td><td class="n">'+m.todo+'</td><td class="n">'+m.cb+'</td><td class="n">'+m.inter+'</td><td class="n">'+m.rdv+'</td><td class="n">'+m.conv+'</td><td class="n">'+pct(m.inter+m.rdv+m.conv,m.touched)+'</td></tr>').join('')+
+   (M.length?M.sort((a,b)=>b.calledToday-a.calledToday||b.called7-a.called7).map(m=>'<tr><td><button class="btn sm" data-act="viewas" data-v="'+esc(m.u)+'"><b>'+esc(nameOf(m.u))+'</b> · voir</button></td><td class="n">'+nf(m.n)+'</td><td class="n">'+m.calledToday+'</td><td class="n">'+m.called7+'</td><td class="n">'+m.todo+'</td><td class="n">'+m.cb+'</td><td class="n">'+m.inter+'</td><td class="n">'+m.rdv+'</td><td class="n">'+m.conv+'</td><td class="n">'+pct(m.inter+m.rdv+m.conv,m.touched)+'</td></tr>').join('')+
    '<tr class="total"><td>Total</td><td class="n">'+nf(assigned)+'</td><td class="n">'+cToday+'</td><td class="n">'+c7+'</td><td class="n">'+M.reduce((a,m)=>a+m.todo,0)+'</td><td class="n">'+M.reduce((a,m)=>a+m.cb,0)+'</td><td class="n">'+inter+'</td><td class="n">'+rdv+'</td><td class="n">'+conv+'</td><td class="n">'+pct(inter+rdv+conv,touched)+'</td></tr>':'<tr><td colspan="10" class="note">Personne n’est encore actif.</td></tr>')+'</tbody></table></div><p class="note">Taux = (Intéressés + RDV + Convertis) ÷ numéros déjà appelés.</p></div>';
   const reg={};S.leads.forEach(x=>{const r=x.region||'—';const o=reg[r]||(reg[r]={n:0,t:0,i:0,c:0});o.n++;if(x.calls>0)o.t++;if(['Intéressé','RDV fixé','Converti'].includes(x.status))o.i++;if(x.status==='Converti')o.c++});
   const R=Object.entries(reg).sort((a,b)=>b[1].i-a[1].i||b[1].n-a[1].n);
@@ -258,7 +259,7 @@ function viewTeam(){
    S.team.map(p=>{const m=memberStats(p.id);return '<tr data-u="'+esc(p.id)+'"><td><b>'+esc(p.name||'')+'</b>'+(p.id===S.me.id?' <span class="note">(moi)</span>':'')+'</td><td>'+esc(p.email)+'</td>'+
    '<td><select data-act="role"'+(p.id===S.me.id?' disabled':'')+'>'+[['pending','En attente'],['agent','Collaboratrice'],['admin','Admin']].map(([k,l])=>'<option value="'+k+'"'+(p.role===k?' selected':'')+'>'+l+'</option>').join('')+'</select></td>'+
    '<td><input data-act="label" size="9" placeholder="ex. Meva" value="'+esc(p.label||'')+'"></td><td class="n">'+nf(m.n)+'</td>'+
-   '<td>'+(p.role==='pending'?'':'<button class="btn sm" data-act="claimlabel"'+(p.label?'':' disabled')+'>Prendre ses numéros du fichier</button> <button class="btn sm" data-act="release">Reprendre les non appelés</button>')+'</td></tr>'}).join('')+'</tbody></table></div>'+
+   '<td>'+(p.role==='pending'?'':'<button class="btn sm primary" data-act="viewas" data-v="'+esc(p.id)+'">Voir son pipeline</button> <button class="btn sm" data-act="claimlabel"'+(p.label?'':' disabled')+'>Prendre ses numéros du fichier</button> <button class="btn sm" data-act="release">Reprendre les non appelés</button>')+'</td></tr>'}).join('')+'</tbody></table></div>'+
    '<p class="note">Étiquette : « Prendre ses numéros du fichier » donne à la personne les numéros non attribués dont la colonne « Assigné à » porte son étiquette.</p></div>';
   h+='<div class="panel"><h3>Attribuer des numéros</h3><p class="note">Non attribués disponibles : <b>'+nf(poolList().length)+'</b></p><div class="row" style="margin-top:8px">'+
    '<label class="fld">À qui<select data-act="att" data-f="uid"><option value="">Choisir…</option>'+act.map(p=>'<option value="'+esc(p.id)+'"'+(a.uid===p.id?' selected':'')+'>'+esc(p.name||p.email)+'</option>').join('')+'</select></label>'+
@@ -410,11 +411,13 @@ app.addEventListener('click',e=>{
   if(a==='logout'){S.sb.auth.signOut();return}
   if(a==='reload'){location.reload();return}
   if(a==='authtab'){S.authTab=v;S.err='';S.msg='';renderAuth()}
-  else if(a==='tab'){S.view=v;render()}
+  else if(a==='tab'){S.view=v;S.viewAs=null;render()}
+  else if(a==='viewas'){S.viewAs=v;S.view='mine';S.q='';render();window.scrollTo(0,0)}
+  else if(a==='unview'){S.viewAs=null;S.view='over';render()}
   else if(a==='flt'){S.flt=v;S.lim=40;render()}
   else if(a==='more'){S.lim+=40;render()}
   else if(a==='kmore'){S.kl[v]=(S.kl[v]||25)+25;render()}
-  else if(a==='mode'){S.mode=v;render()}
+  else if(a==='mode'){S.mode=v;try{localStorage.setItem('bb_mode',v)}catch(e){}render()}
   else if(a==='copy')copy(v);
   else if(a==='open'&&id){S.open=id;render()}
   else if(a==='close'){S.open=null;S.adding=false;render()}
