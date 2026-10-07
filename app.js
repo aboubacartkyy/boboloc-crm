@@ -1,8 +1,11 @@
 (function(){
 'use strict';
-const ST=['À appeler','Messagerie','Rappeler','Intéressé','RDV fixé','Pas intéressé','Faux numéro','Converti','Nouveau lead','Répond pas','Répond pas (+2 véhicules)','Lead qualifié','Démo planifiée','Démo reussi (Lancement future)','Démo terminée (1 véhicule)','Démo terminée (+2 véhicules)',"Période d'essai",'Abandonné','Archive ( 1 véhicule )','Archive ( +2 véhicules )','Gagné'];
+const ST=['Nouveau lead','Répond pas','Répond pas (+2 véhicules)','Lead qualifié','Démo planifiée','Démo reussi (Lancement future)','Démo terminée (1 véhicule)','Démo terminée (+2 véhicules)',"Période d'essai",'Abandonné','Archive ( 1 véhicule )','Archive ( +2 véhicules )','Gagné'];
+const LEG={'À appeler':'Nouveau lead','Messagerie':'Répond pas','Rappeler':'Répond pas','Intéressé':'Lead qualifié','RDV fixé':'Démo planifiée','Pas intéressé':'Abandonné','Faux numéro':'Abandonné','Converti':'Gagné'};
+const ms=s=>ST.includes(s)?s:(LEG[s]||'Nouveau lead');
+const isCB=s=>s==='Répond pas'||s==='Répond pas (+2 véhicules)';
 const CMAP={'Nouveau lead':0,'Répond pas':1,'Répond pas (+2 véhicules)':1,'Lead qualifié':3,'Démo planifiée':2,'Démo reussi (Lancement future)':3,'Démo terminée (1 véhicule)':3,'Démo terminée (+2 véhicules)':4,"Période d'essai":7,'Abandonné':5,'Archive ( 1 véhicule )':6,'Archive ( +2 véhicules )':6,'Gagné':4};
-const RES=ST.filter(s=>!['À appeler','Converti','Gagné'].includes(s));
+const RES=ST.filter(s=>s!=='Gagné');
 const sIdx=s=>CMAP[s]!=null?CMAP[s]:Math.max(0,ST.indexOf(s));
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -37,6 +40,7 @@ async function pageAll(build){
 async function loadAll(){
   const sb=S.sb;
   S.leads=await pageAll(()=>sb.from('leads').select('*').order('id'));
+  S.leads.forEach(l=>{l.status=ms(l.status)});
   S.calls=await pageAll(()=>sb.from('calls').select('*').gte('day',addDays(-30)).order('id'));
   if(isAdmin()){const {data}=await sb.from('profiles').select('*').order('created_at');S.team=data||[]}
 }
@@ -104,13 +108,13 @@ async function setStatus(id,st){
   const l=S.leads.find(x=>x.id===id);if(!l)return;
   const now=new Date().toISOString();
   const p={status:st,updated_at:now,last_call_at:now,calls:(l.calls||0)+1,
-    callback_at:st==='Rappeler'?(l.callback_at&&l.callback_at>=today()?l.callback_at:addDays(1)):null,
-    converted_at:st==='Converti'?now:null};
+    callback_at:isCB(st)?(l.callback_at&&l.callback_at>=today()?l.callback_at:addDays(1)):null,
+    converted_at:st==='Gagné'?now:null};
   const old={...l};patchLocal(id,p);render();
   const {error}=await S.sb.from('leads').update(p).eq('id',id);
   if(error){patchLocal(id,old);render();toast("Erreur d'enregistrement");return}
-  if(st!=='À appeler'&&!S.viewAs){const r=await S.sb.from('calls').insert({lead_id:id,user_id:S.me.id,status:st,day:today()});if(!r.error)S.calls.push({lead_id:id,user_id:S.me.id,status:st,day:today()})}
-  toast(st==='Converti'?'Client converti 🎉':'Enregistré : '+st);sched();
+  if(!S.viewAs){const r=await S.sb.from('calls').insert({lead_id:id,user_id:S.me.id,status:st,day:today()});if(!r.error)S.calls.push({lead_id:id,user_id:S.me.id,status:st,day:today()})}
+  toast(st==='Gagné'?'Client gagné 🎉':'Enregistré : '+st);sched();
 }
 async function saveField(id,p){
   p.updated_at=new Date().toISOString();patchLocal(id,p);
@@ -121,7 +125,7 @@ async function addProspect(f){
   const d=digits(f.phone);
   if(!f.name.trim()){toast("Mets au moins le nom de l'agence");return}
   if(d.length<8){toast('Numéro de téléphone invalide');return}
-  const row={owner:S.me.id,phone_key:d,name:f.name.trim(),city:f.city.trim(),dept:f.dept.trim(),phone:f.phone.trim(),phone2:f.phone2.trim(),veh:f.veh.trim(),contact:f.contact.trim(),notes:f.notes.trim(),src:'Saisie manuelle',status:'À appeler'};
+  const row={owner:S.me.id,phone_key:d,name:f.name.trim(),city:f.city.trim(),dept:f.dept.trim(),phone:f.phone.trim(),phone2:f.phone2.trim(),veh:f.veh.trim(),contact:f.contact.trim(),notes:f.notes.trim(),src:'Saisie manuelle',status:'Nouveau lead'};
   const {data,error}=await S.sb.from('leads').insert(row).select().single();
   if(error){toast(error.code==='23505'?'Ce numéro existe déjà dans le CRM (chez toi ou une collègue)':"Erreur de création");return}
   S.leads.push(data);S.adding=false;S.open=data.id;render();toast('Profil créé');
@@ -135,8 +139,7 @@ function copy(t){
 function memberStats(u){
   const L=S.leads.filter(x=>x.owner===u),C=S.calls.filter(x=>x.user_id===u),t=today(),w=addDays(-6);
   const c=countBy(L,x=>x.status);
-  return {u,n:L.length,calledToday:C.filter(x=>x.day===t).length,called7:C.filter(x=>x.day>=w).length,
-    inter:(c['Intéressé']||0)+(c['Lead qualifié']||0),rdv:(c['RDV fixé']||0)+(c['Démo planifiée']||0),conv:(c['Converti']||0)+(c['Gagné']||0)+(c['Démo reussi (Lancement future)']||0),todo:c['À appeler']||0,cb:c['Rappeler']||0,touched:L.filter(x=>x.calls>0).length};
+  return {u,n:L.length,c,calledToday:C.filter(x=>x.day===t).length,called7:C.filter(x=>x.day>=w).length,touched:L.filter(x=>x.calls>0).length};
 }
 function last14(calls){const out=[];for(let i=13;i>=0;i--)out.push({d:addDays(-i),n:0});const m={};out.forEach(o=>m[o.d]=o);calls.forEach(c=>{if(m[c.day])m[c.day].n++});return out}
 function dayChart(a){const mx=Math.max(1,...a.map(x=>x.n));return '<div class="days">'+a.map(x=>'<div title="'+x.d+' : '+x.n+' appels"><b>'+(x.n||'')+'</b><i style="height:'+Math.round(x.n/mx*70)+'px"></i><em>'+x.d.slice(8)+'</em></div>').join('')+'</div>'}
@@ -158,19 +161,19 @@ function viewMine(){
   const L=mineList(),t=today();
   const cToday=S.calls.filter(c=>c.user_id===tgt()&&c.day===t).length;
   const c=countBy(L,x=>x.status);
-  const due=L.filter(x=>x.status==='Rappeler'&&x.callback_at&&x.callback_at<=t);
+  const due=L.filter(x=>isCB(x.status)&&x.callback_at&&x.callback_at<=t);
   let h=(S.viewAs?'<div class="panel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Tu regardes le pipeline de '+esc(nameOf(S.viewAs))+'</b><button class="btn sm primary" data-act="unview">← Retour à la vue d’ensemble</button></div>':'')+'<h2>'+(S.viewAs?'Pipeline de '+esc(nameOf(S.viewAs)):'Mes appels')+'</h2><p class="sub">Appelle, puis choisis le résultat. Chaque résultat compte un appel dans tes statistiques.</p>';
-  h+='<div class="kpis">'+kpi(cToday,"Appels aujourd'hui")+kpi(due.length,'Rappels à faire')+kpi(c['À appeler']||0,'Reste à appeler')+kpi(c['Intéressé']||0,'Intéressés','hot')+kpi(c['RDV fixé']||0,'RDV fixés','hot')+kpi(c['Converti']||0,'Convertis','hot')+kpi(L.length,'Mes numéros')+'</div>';
+  h+='<div class="kpis">'+kpi(cToday,"Appels aujourd'hui")+kpi(due.length,'Rappels à faire')+kpi(c['Nouveau lead']||0,'Nouveau lead')+kpi(c['Lead qualifié']||0,'Lead qualifié','hot')+kpi(c['Démo planifiée']||0,'Démo planifiée','hot')+kpi(c['Gagné']||0,'Gagné','hot')+kpi(L.length,'Mes numéros')+'</div>';
   h+=toolbar();
   if(!L.length)return h+'<div class="empty"><b>Aucun numéro pour le moment.</b><p>Aboubacar ou son associé va t’attribuer ta liste d’appels, ou importe ton propre fichier Excel.</p></div>';
   if(S.mode==='pipe')return h+board(L);
-  const isTodo=x=>x.status==='À appeler'||x.status==='Messagerie'||(x.status==='Rappeler'&&(!x.callback_at||x.callback_at<=t));
+  const isTodo=x=>x.status==='Nouveau lead'||isCB(x.status);
   const cnt={todo:L.filter(isTodo).length,all:L.length};ST.forEach(s=>cnt[s]=c[s]||0);
   const fl=[['todo','À faire'],['all','Tous'],...ST.map(s=>[s,s])];
   h+='<div class="chips">'+fl.map(([k,l])=>'<button class="chip" data-act="flt" data-v="'+esc(k)+'" aria-pressed="'+(S.flt===k)+'">'+esc(l)+'<small>'+(cnt[k]||0)+'</small></button>').join('')+'</div>';
   h+='<input class="search" type="search" id="q" placeholder="Chercher une agence, une ville, un numéro…" value="'+esc(S.q)+'">';
   let V=S.q.trim()?search(L):L.filter(x=>S.flt==='all'?true:S.flt==='todo'?isTodo(x):x.status===S.flt);
-  const score=x=>x.status==='Rappeler'&&x.callback_at&&x.callback_at<=t?0:x.status==='À appeler'?1:x.status==='Messagerie'?2:x.status==='Rappeler'?3:4;
+  const score=x=>isCB(x.status)&&x.callback_at&&x.callback_at<=t?0:x.status==='Nouveau lead'?1:isCB(x.status)?2:4;
   V=V.slice().sort((a,b)=>score(a)-score(b)||String(a.dept||'').localeCompare(String(b.dept||''))||String(a.city||'').localeCompare(String(b.city||'')));
   if(!V.length)return h+'<div class="empty">Rien dans cette liste.</div>';
   h+=S.mode==='sheet'?sheetTable(V.slice(0,S.lim)):V.slice(0,S.lim).map(leadCard).join('');
@@ -179,34 +182,34 @@ function viewMine(){
 }
 function board(L){
   const V=search(L),t=today();
-  const order=['Nouveau lead','À appeler','Messagerie','Répond pas','Répond pas (+2 véhicules)','Rappeler','Lead qualifié','Intéressé','Démo planifiée','RDV fixé','Démo reussi (Lancement future)','Démo terminée (1 véhicule)','Démo terminée (+2 véhicules)',"Période d'essai",'Converti','Gagné','Pas intéressé','Abandonné','Archive ( 1 véhicule )','Archive ( +2 véhicules )','Faux numéro'];
+  const order=[...ST];
   const by=countBy(V,x=>x.status);
   let h='<input class="search" type="search" id="q" placeholder="Chercher une agence, une ville, un numéro…" value="'+esc(S.q)+'"><p class="note" style="margin:0 0 8px">Glisse une carte d’une colonne à l’autre pour changer son étape. Clique sur une carte pour ouvrir le profil.</p><div class="board">';
   order.forEach(st=>{
-    const c=V.filter(x=>x.status===st).sort((a,b)=>st==='Rappeler'?String(a.callback_at||'').localeCompare(String(b.callback_at||'')):String(b.updated_at||'').localeCompare(String(a.updated_at||''))||String(a.city||'').localeCompare(String(b.city||'')));
+    const c=V.filter(x=>x.status===st).sort((a,b)=>isCB(st)?String(a.callback_at||'').localeCompare(String(b.callback_at||'')):String(b.updated_at||'').localeCompare(String(a.updated_at||''))||String(a.city||'').localeCompare(String(b.city||'')));
     const lim=S.kl[st]||25;
     h+='<div class="col r'+sIdx(st)+'" data-col="'+esc(st)+'"><h4>'+esc(st)+'<span>'+(by[st]||0)+'</span></h4><div class="cards">'+
       c.slice(0,lim).map(l=>'<div class="kc" draggable="true" data-act="open" data-id="'+esc(l.id)+'"><b>'+esc(l.name||'(sans nom)')+'</b><div class="m">'+esc([l.city,l.dept?('('+l.dept+')'):''].filter(Boolean).join(' '))+'</div><div class="t">'+esc(fmtPhone(l.phone))+'</div>'+
-      (l.callback_at&&st==='Rappeler'?'<span class="dt">'+(l.callback_at<=t?'À rappeler aujourd’hui':'Rappel le '+esc(l.callback_at))+'</span>':'')+(l.notes?'<div class="nn">'+esc(l.notes)+'</div>':'')+'</div>').join('')+
+      (l.callback_at&&isCB(st)?'<span class="dt">'+(l.callback_at<=t?'À rappeler aujourd’hui':'Rappel le '+esc(l.callback_at))+'</span>':'')+(l.notes?'<div class="nn">'+esc(l.notes)+'</div>':'')+'</div>').join('')+
       (c.length>lim?'<button class="btn sm" data-act="kmore" data-v="'+esc(st)+'">Voir plus ('+(c.length-lim)+')</button>':'')+(!c.length?'<p class="note" style="margin:4px">Vide</p>':'')+'</div></div>';
   });
   return h+'</div>';
 }
 function sheetTable(V){
   return '<div class="scroll sheet"><table class="sheet"><thead><tr><th>Statut</th><th>Agence</th><th>Ville</th><th>Dépt</th><th>Téléphone</th><th>Notes / suivi</th><th></th></tr></thead><tbody>'+
-  V.map(l=>{const s=l.status;return '<tr class="r'+sIdx(s)+'" data-id="'+esc(l.id)+'"><td><select data-act="st" class="s'+sIdx(s)+'">'+ST.map(x=>'<option'+(x===s?' selected':'')+'>'+esc(x)+'</option>').join('')+'</select>'+(s==='Rappeler'&&l.callback_at?'<div class="sub2">le '+esc(l.callback_at)+'</div>':'')+'</td>'+
+  V.map(l=>{const s=l.status;return '<tr class="r'+sIdx(s)+'" data-id="'+esc(l.id)+'"><td><select data-act="st" class="s'+sIdx(s)+'">'+ST.map(x=>'<option'+(x===s?' selected':'')+'>'+esc(x)+'</option>').join('')+'</select>'+(isCB(s)&&l.callback_at?'<div class="sub2">le '+esc(l.callback_at)+'</div>':'')+'</td>'+
    '<td><a class="open" data-act="open">'+esc(l.name||'(sans nom)')+'</a><div class="sub2">'+esc([l.veh?('≈ '+l.veh+' véhicules'):'',l.calls?(l.calls+' appel'+(l.calls>1?'s':'')):''].filter(Boolean).join(' · '))+'</div></td><td>'+esc(l.city)+'</td><td>'+esc(l.dept)+'</td>'+
    '<td><div class="tel">'+esc(fmtPhone(l.phone))+'</div>'+(l.phone2?'<div class="alt">Autre : '+esc(fmtPhone(l.phone2))+'</div>':'')+'<button class="btn sm" style="margin-top:6px" data-act="copy" data-v="'+esc(l.phone)+'">Copier</button></td>'+
    '<td><textarea class="nt" data-act="note" placeholder="Note…">'+esc(l.notes||'')+'</textarea></td>'+
-   '<td><div class="acts">'+(s==='Converti'?'':'<button class="btn sm primary" data-act="conv">Convertir</button>')+'<button class="btn sm" data-act="open">Profil</button></div></td></tr>'}).join('')+'</tbody></table></div>';
+   '<td><div class="acts">'+(s==='Gagné'?'':'<button class="btn sm primary" data-act="conv">Convertir</button>')+'<button class="btn sm" data-act="open">Profil</button></div></td></tr>'}).join('')+'</tbody></table></div>';
 }
 function leadCard(l){
   const s=l.status,tel=String(l.phone||'').replace(/[^\d+]/g,'');
   let h='<article class="lead" data-id="'+esc(l.id)+'"><div class="lead-top"><div><h3><a class="open" data-act="open" style="cursor:pointer">'+esc(l.name||'(sans nom)')+'</a></h3><p class="meta">'+esc([l.city,l.dept?('('+l.dept+')'):'',l.veh?('≈ '+l.veh+' véhicules'):''].filter(Boolean).join(' · '))+(l.calls?' · '+l.calls+' appel'+(l.calls>1?'s':''):'')+'</p></div>'+pill(s)+'</div>';
   h+='<div class="phone"><a href="tel:'+esc(tel)+'">'+esc(fmtPhone(l.phone))+'</a><button class="btn sm" data-act="copy" data-v="'+esc(l.phone)+'">Copier</button>'+(l.phone2?'<span class="alt">Autre : '+esc(fmtPhone(l.phone2))+'</span>':'')+'</div>';
   h+='<div class="results">'+RES.map(r=>'<button class="res s'+sIdx(r)+'" data-act="res" data-v="'+esc(r)+'" aria-pressed="'+(s===r)+'">'+esc(r)+'</button>').join('')+'</div>';
-  if(s==='Rappeler')h+='<label class="cbrow">Rappeler le <input type="date" data-act="cb" value="'+esc(l.callback_at||'')+'"></label>';
-  h+='<textarea data-act="note" placeholder="Notes : nom du gérant, ce qu’il a dit…">'+esc(l.notes||'')+'</textarea><p style="margin:8px 0 0">'+(s==='Converti'?'':'<button class="btn sm" data-act="conv">Convertir en client</button> ')+'<button class="btn sm" data-act="open">Ouvrir le profil</button></p></article>';
+  if(isCB(s))h+='<label class="cbrow">Rappeler le <input type="date" data-act="cb" value="'+esc(l.callback_at||'')+'"></label>';
+  h+='<textarea data-act="note" placeholder="Notes : nom du gérant, ce qu’il a dit…">'+esc(l.notes||'')+'</textarea><p style="margin:8px 0 0">'+(s==='Gagné'?'':'<button class="btn sm" data-act="conv">Convertir en client</button> ')+'<button class="btn sm" data-act="open">Ouvrir le profil</button></p></article>';
   return h;
 }
 function modal(){
@@ -219,9 +222,9 @@ function modal(){
   const F=[['name','Agence'],['contact','Contact / gérant'],['city','Ville'],['dept','Département'],['phone2','Autre numéro'],['veh','Nb véhicules'],['email','E-mail']];
   let h='<div class="ov" data-act="close"><div class="modal" data-id="'+esc(l.id)+'"><div class="hd"><div><h2>'+esc(l.name||'(sans nom)')+'</h2><p class="meta">'+pill(s)+(l.converted_at?' · converti le '+esc(dayStr(l.converted_at)):'')+(isAdmin()&&l.owner?' · attribué à '+esc(nameOf(l.owner)):'')+'</p></div><button class="btn sm" data-act="close">Fermer</button></div>';
   h+='<div class="phone"><span class="num">'+esc(fmtPhone(l.phone))+'</span><button class="btn sm" data-act="copy" data-v="'+esc(l.phone)+'">Copier</button></div>';
-  if(s==='Converti')h+='<p><button class="btn" data-act="res" data-v="Intéressé">Annuler la conversion</button></p>';
+  if(s==='Gagné')h+='<p><button class="btn" data-act="res" data-v="Lead qualifié">Annuler la conversion</button></p>';
   else h+='<p style="margin:0 0 12px"><button class="btn conv" data-act="conv">✔ Convertir en client</button></p><div class="results">'+RES.map(r=>'<button class="res s'+sIdx(r)+'" data-act="res" data-v="'+esc(r)+'" aria-pressed="'+(s===r)+'">'+esc(r)+'</button>').join('')+'</div>';
-  if(s==='Rappeler')h+='<label class="cbrow">Rappeler le <input type="date" data-act="cb" value="'+esc(l.callback_at||'')+'"></label>';
+  if(isCB(s))h+='<label class="cbrow">Rappeler le <input type="date" data-act="cb" value="'+esc(l.callback_at||'')+'"></label>';
   h+='<div class="fg">'+F.map(([k,lb])=>'<label class="fld">'+lb+'<input data-act="fld" data-f="'+k+'" value="'+esc(l[k]||'')+'"></label>').join('')+'</div>';
   h+='<label class="fld">Notes<textarea data-act="note" style="min-height:90px" placeholder="Notes : ce qui a été dit, prochaine étape…">'+esc(l.notes||'')+'</textarea></label>';
   h+='<p class="note" style="margin-top:10px">'+(l.calls||0)+' appel(s)'+(l.last_call_at?' · dernier le '+esc(dayStr(l.last_call_at)):'')+(l.region?' · '+esc(l.region):'')+(l.src?' · Sources : '+esc(l.src):'')+(l.ver?' · Vérifié le '+esc(l.ver):'')+'</p></div></div>';
@@ -230,22 +233,21 @@ function modal(){
 /* ---------------- vues : administration ---------------- */
 function viewOver(){
   const M=members().map(p=>memberStats(p.id));
-  const assigned=M.reduce((a,m)=>a+m.n,0),touched=M.reduce((a,m)=>a+m.touched,0);
-  const inter=M.reduce((a,m)=>a+m.inter,0),rdv=M.reduce((a,m)=>a+m.rdv,0),conv=M.reduce((a,m)=>a+m.conv,0);
+  const assigned=M.reduce((a,m)=>a+m.n,0);
   const cToday=M.reduce((a,m)=>a+m.calledToday,0),c7=M.reduce((a,m)=>a+m.called7,0);
-  const pool=poolList();
+  const sc=countBy(S.leads,x=>x.status),pool=poolList(),mx=Math.max(1,...ST.map(s=>sc[s]||0));
   let h='<h2>Vue d’ensemble</h2><p class="sub">Toute l’équipe, mise à jour toutes les 30 secondes.</p>';
-  h+='<div class="kpis">'+kpi(S.leads.length,'Numéros au total')+kpi(pool.length,'Non attribués')+kpi(assigned,'Attribués')+kpi(cToday,"Appels aujourd'hui")+kpi(c7,'Appels sur 7 jours')+kpi(inter,'Intéressés','hot')+kpi(rdv,'RDV fixés','hot')+kpi(conv,'Convertis','hot')+kpi(pct(inter+rdv+conv,touched),'Taux d’intérêt')+'</div>';
+  h+='<div class="kpis">'+kpi(S.leads.length,'Numéros au total')+kpi(pool.length,'Non attribués')+kpi(assigned,'Attribués')+kpi(cToday,"Appels aujourd'hui")+kpi(c7,'Appels sur 7 jours')+kpi(sc['Lead qualifié']||0,'Lead qualifié','hot')+kpi(sc['Démo planifiée']||0,'Démo planifiée','hot')+kpi(sc['Gagné']||0,'Gagné','hot')+'</div>';
   h+='<div class="grid2"><div class="panel"><h3>Appels par jour (14 jours)</h3>'+dayChart(last14(S.calls))+'</div>';
-  const sc=countBy(S.leads,x=>x.status),mx=Math.max(1,...ST.map(s=>sc[s]||0));
-  h+='<div class="panel"><h3>Où en sont les numéros</h3><div class="scroll"><table><tbody>'+ST.map(s=>'<tr><td>'+pill(s)+'</td><td class="n">'+nf(sc[s]||0)+'</td><td style="width:40%"><div class="bar"><i style="width:'+Math.round((sc[s]||0)/mx*100)+'%"></i></div></td></tr>').join('')+'</tbody></table></div></div></div>';
-  h+='<div class="panel"><h3>Par collaboratrice</h3><div class="scroll"><table><thead><tr><th>Nom</th><th class="n">Numéros</th><th class="n">Aujourd’hui</th><th class="n">7 jours</th><th class="n">Reste</th><th class="n">Rappels</th><th class="n">Intéressés</th><th class="n">RDV</th><th class="n">Convertis</th><th class="n">Taux</th></tr></thead><tbody>'+
-   (M.length?M.sort((a,b)=>b.calledToday-a.calledToday||b.called7-a.called7).map(m=>'<tr><td><button class="btn sm" data-act="viewas" data-v="'+esc(m.u)+'"><b>'+esc(nameOf(m.u))+'</b> · voir</button></td><td class="n">'+nf(m.n)+'</td><td class="n">'+m.calledToday+'</td><td class="n">'+m.called7+'</td><td class="n">'+m.todo+'</td><td class="n">'+m.cb+'</td><td class="n">'+m.inter+'</td><td class="n">'+m.rdv+'</td><td class="n">'+m.conv+'</td><td class="n">'+pct(m.inter+m.rdv+m.conv,m.touched)+'</td></tr>').join('')+
-   '<tr class="total"><td>Total</td><td class="n">'+nf(assigned)+'</td><td class="n">'+cToday+'</td><td class="n">'+c7+'</td><td class="n">'+M.reduce((a,m)=>a+m.todo,0)+'</td><td class="n">'+M.reduce((a,m)=>a+m.cb,0)+'</td><td class="n">'+inter+'</td><td class="n">'+rdv+'</td><td class="n">'+conv+'</td><td class="n">'+pct(inter+rdv+conv,touched)+'</td></tr>':'<tr><td colspan="10" class="note">Personne n’est encore actif.</td></tr>')+'</tbody></table></div><p class="note">Taux = (Intéressés + RDV + Convertis) ÷ numéros déjà appelés.</p></div>';
-  const reg={};S.leads.forEach(x=>{const r=x.region||'—';const o=reg[r]||(reg[r]={n:0,t:0,i:0,c:0});o.n++;if(x.calls>0)o.t++;if(['Intéressé','RDV fixé','Converti'].includes(x.status))o.i++;if(x.status==='Converti')o.c++});
-  const R=Object.entries(reg).sort((a,b)=>b[1].i-a[1].i||b[1].n-a[1].n);
-  h+='<div class="panel"><h3>Par région</h3><div class="scroll"><table><thead><tr><th>Région</th><th class="n">Numéros</th><th class="n">Déjà appelés</th><th class="n">Intéressés + RDV + convertis</th><th class="n">Convertis</th></tr></thead><tbody>'+
-   (R.length?R.map(([r,o])=>'<tr><td>'+esc(r)+'</td><td class="n">'+nf(o.n)+'</td><td class="n">'+nf(o.t)+'</td><td class="n">'+nf(o.i)+'</td><td class="n">'+nf(o.c)+'</td></tr>').join(''):'<tr><td colspan="5" class="note">Aucun numéro. Va dans « Numéros » pour importer le fichier.</td></tr>')+'</tbody></table></div></div>';
+  h+='<div class="panel"><h3>Où en sont les leads</h3><div class="scroll"><table><tbody>'+ST.map(s=>'<tr><td>'+pill(s)+'</td><td class="n">'+nf(sc[s]||0)+'</td><td style="width:30%"><div class="bar"><i style="width:'+Math.round((sc[s]||0)/mx*100)+'%"></i></div></td></tr>').join('')+'</tbody></table></div></div></div>';
+  const tot={};ST.forEach(s=>tot[s]=M.reduce((a,m)=>a+(m.c[s]||0),0));
+  h+='<div class="panel"><h3>Par collaboratrice</h3><div class="scroll"><table><thead><tr><th>Nom</th><th class="n">Numéros</th><th class="n">Aujourd’hui</th><th class="n">7 jours</th>'+ST.map(s=>'<th class="n">'+esc(s)+'</th>').join('')+'</tr></thead><tbody>'+
+   (M.length?M.sort((a,b)=>b.calledToday-a.calledToday||b.called7-a.called7).map(m=>'<tr><td><button class="btn sm" data-act="viewas" data-v="'+esc(m.u)+'"><b>'+esc(nameOf(m.u))+'</b> · voir</button></td><td class="n">'+nf(m.n)+'</td><td class="n">'+m.calledToday+'</td><td class="n">'+m.called7+'</td>'+ST.map(s=>'<td class="n">'+(m.c[s]||0)+'</td>').join('')+'</tr>').join('')+
+   '<tr class="total"><td>Total</td><td class="n">'+nf(assigned)+'</td><td class="n">'+cToday+'</td><td class="n">'+c7+'</td>'+ST.map(s=>'<td class="n">'+tot[s]+'</td>').join('')+'</tr>':'<tr><td colspan="'+(ST.length+4)+'" class="note">Personne n’est encore actif.</td></tr>')+'</tbody></table></div></div>';
+  const reg={};S.leads.forEach(x=>{const r=x.region||'—';const o=reg[r]||(reg[r]={n:0,t:0,q:0,d:0,g:0});o.n++;if(x.calls>0)o.t++;if(x.status==='Lead qualifié')o.q++;if(x.status==='Démo planifiée')o.d++;if(x.status==='Gagné')o.g++});
+  const R=Object.entries(reg).sort((a,b)=>b[1].g-a[1].g||b[1].q-a[1].q||b[1].n-a[1].n);
+  h+='<div class="panel"><h3>Par région</h3><div class="scroll"><table><thead><tr><th>Région</th><th class="n">Numéros</th><th class="n">Déjà appelés</th><th class="n">Lead qualifié</th><th class="n">Démo planifiée</th><th class="n">Gagné</th></tr></thead><tbody>'+
+   (R.length?R.map(([r,o])=>'<tr><td>'+esc(r)+'</td><td class="n">'+nf(o.n)+'</td><td class="n">'+nf(o.t)+'</td><td class="n">'+nf(o.q)+'</td><td class="n">'+nf(o.d)+'</td><td class="n">'+nf(o.g)+'</td></tr>').join(''):'<tr><td colspan="6" class="note">Aucun numéro. Va dans « Numéros » pour importer le fichier.</td></tr>')+'</tbody></table></div></div>';
   return h;
 }
 function progress(){
@@ -348,7 +350,7 @@ async function claimLabel(u){
   await runChunks(c.map(x=>x.id),'Attribution',100,ids=>setOwner(ids,u));
 }
 async function release(u){
-  const c=S.leads.filter(x=>x.owner===u&&x.status==='À appeler'&&!(x.calls>0));
+  const c=S.leads.filter(x=>x.owner===u&&x.status==='Nouveau lead'&&!(x.calls>0));
   if(!c.length){toast('Rien à reprendre');return}
   await runChunks(c.map(x=>x.id),'Reprise',100,ids=>setOwner(ids,null));
 }
@@ -368,7 +370,7 @@ function parseWb(buf){
       const r=rows[i],ph=g(r,'phone'),d=digits(ph);if(d.length<8)continue;
       const label=g(r,'label'),st=g(r,'status'),prev=map.get(d);
       if(prev){if(!prev.label&&label)prev.label=label;if(!prev.region&&g(r,'region'))prev.region=g(r,'region');continue}
-      map.set(d,{phone_key:d,name:g(r,'name'),city:g(r,'city'),dept:g(r,'dept'),region:g(r,'region')||(sn==='_base'?'':sn),phone:ph,phone2:g(r,'phone2'),notes:g(r,'notes'),veh:g(r,'veh'),src:g(r,'src'),ver:g(r,'ver'),label,status:ST.includes(st)?st:'À appeler'});
+      map.set(d,{phone_key:d,name:g(r,'name'),city:g(r,'city'),dept:g(r,'dept'),region:g(r,'region')||(sn==='_base'?'':sn),phone:ph,phone2:g(r,'phone2'),notes:g(r,'notes'),veh:g(r,'veh'),src:g(r,'src'),ver:g(r,'ver'),label,status:ms(st)});
     }
   });
   return [...map.values()];
@@ -425,7 +427,7 @@ app.addEventListener('click',e=>{
   else if(a==='add'){S.adding=true;render()}
   else if(a==='saveadd'){const f={};document.querySelectorAll('#addf [data-k]').forEach(i=>f[i.dataset.k]=i.value);addProspect(f)}
   else if(a==='res'&&id)setStatus(id,v);
-  else if(a==='conv'&&id)setStatus(id,'Converti');
+  else if(a==='conv'&&id)setStatus(id,'Gagné');
   else if(a==='assign')assign();
   else if(a==='spread')spread();
   else if(a==='doimport')doImport();
