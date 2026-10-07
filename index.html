@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Boboloc — Gestion de contrats de location de véhicules</title>
+<meta name="description" content="Boboloc aide les loueurs de véhicules professionnels à gérer leurs contrats de location simplement.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a67a3'/%3E%3Ctext x='16' y='23' font-size='20' font-weight='800' text-anchor='middle' fill='white' font-family='Arial'%3EB%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--bg:#f3f5f8;--surface:#fff;--ink:#13202c;--muted:#5d6b79;--line:#d9e0e8;--accent:#0a67a3;--accent-ink:#fff;--soft:#dcecf7;--dark:#0e2a3d}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1720;--surface:#17212c;--ink:#e8eef4;--muted:#93a2b1;--line:#2b3947;--accent:#4aa8e6;--accent-ink:#06121b;--soft:#17344a;--dark:#091722;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Plus Jakarta Sans",system-ui,sans-serif;line-height:1.55}
+.w{max-width:1040px;margin:0 auto;padding-inline:20px}
+header{display:flex;align-items:center;gap:12px;padding-block:18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px}
+.logo{width:34px;height:34px;border-radius:9px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-weight:800}
+.btn{display:inline-block;text-decoration:none;font-weight:700;border-radius:10px;padding:10px 18px;border:1px solid var(--line);color:var(--ink);background:var(--surface)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+header .btn{margin-left:auto}
+.hero{padding-block:56px 40px;display:grid;grid-template-columns:1.15fr .85fr;gap:36px;align-items:center}
+h1{font-size:clamp(30px,5vw,50px);line-height:1.08;letter-spacing:-.025em;margin:0 0 16px;text-wrap:balance}
+.lead{font-size:18px;color:var(--muted);margin:0 0 24px;max-width:52ch}
+.cta{display:flex;gap:10px;flex-wrap:wrap}
+.card{background:var(--dark);color:#e8eef4;border-radius:18px;padding:22px;font-size:14px}
+.card .row{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.12)}
+.card .row:last-child{border:0}
+.tag{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:99px;background:#d8f2e3;color:#0b7a43;white-space:nowrap;align-self:center}
+.tag.b{background:#dcecf7;color:#0a67a3}.tag.o{background:#fbefd0;color:#8a5a00}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding-block:30px}
+.f{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px}
+.f h3{margin:0 0 6px;font-size:16px}.f p{margin:0;color:var(--muted);font-size:14.5px}
+.team{background:var(--soft);border-radius:18px;padding:28px;margin-block:20px;display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.team h2{margin:0 0 4px;font-size:22px}.team p{margin:0;color:var(--muted)}
+footer{padding-block:34px;color:var(--muted);font-size:13.5px;text-align:center}
+@media (max-width:760px){.hero{grid-template-columns:1fr;padding-block:30px}}
+</style>
+</head>
+<body>
+<div class="w">
+<header><div class="brand"><div class="logo">B</div>Boboloc</div><a class="btn" href="app.html">Espace équipe</a></header>
+<section class="hero">
+  <div>
+    <h1>Vos contrats de location de véhicules, enfin simples à gérer.</h1>
+    <p class="lead">Boboloc est l’application des loueurs professionnels : créez vos contrats, suivez vos véhicules et vos clients, sans paperasse.</p>
+    <div class="cta"><a class="btn p" href="app.html">Accéder à l’espace équipe</a></div>
+  </div>
+  <div class="card" aria-hidden="true">
+    <div class="row"><span>Contrat n° 0142 · Utilitaire 12 m³</span><span class="tag">En cours</span></div>
+    <div class="row"><span>Contrat n° 0143 · Citadine</span><span class="tag b">À signer</span></div>
+    <div class="row"><span>Contrat n° 0144 · Berline</span><span class="tag o">Retour demain</span></div>
+    <div class="row"><span>Contrat n° 0145 · SUV</span><span class="tag">En cours</span></div>
+  </div>
+</section>
+<section class="grid">
+  <div class="f"><h3>Contrats en quelques clics</h3><p>Un contrat clair et prêt à signer pour chaque location.</p></div>
+  <div class="f"><h3>Suivi des véhicules</h3><p>Sachez ce qui est loué, ce qui est disponible et ce qui revient.</p></div>
+  <div class="f"><h3>Gestion des clients</h3><p>Retrouvez l’historique de chaque client au même endroit.</p></div>
+  <div class="f"><h3>Pensé pour les pros</h3><p>Conçu pour les agences et loueurs indépendants.</p></div>
+</section>
+<section class="team">
+  <div><h2>Vous faites partie de l’équipe ?</h2><p>Connectez-vous à l’espace CRM pour gérer vos appels de prospection.</p></div>
+  <a class="btn p" href="app.html">Se connecter</a>
+</section>
+<footer>© Boboloc</footer>
+</div>
+</body>
+</html>
