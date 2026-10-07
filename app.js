@@ -1,8 +1,9 @@
 (function(){
 'use strict';
-const ST=['À appeler','Messagerie','Rappeler','Intéressé','RDV fixé','Pas intéressé','Faux numéro','Converti'];
-const RES=ST.slice(1,7);
-const sIdx=s=>Math.max(0,ST.indexOf(s));
+const ST=['À appeler','Messagerie','Rappeler','Intéressé','RDV fixé','Pas intéressé','Faux numéro','Converti','Nouveau lead','Répond pas','Répond pas (+2 véhicules)','Lead qualifié','Démo planifiée','Démo reussi (Lancement future)','Démo terminée (1 véhicule)','Démo terminée (+2 véhicules)',"Période d'essai",'Abandonné','Archive ( 1 véhicule )','Archive ( +2 véhicules )','Gagné'];
+const CMAP={'Nouveau lead':0,'Répond pas':1,'Répond pas (+2 véhicules)':1,'Lead qualifié':3,'Démo planifiée':2,'Démo reussi (Lancement future)':3,'Démo terminée (1 véhicule)':3,'Démo terminée (+2 véhicules)':4,"Période d'essai":7,'Abandonné':5,'Archive ( 1 véhicule )':6,'Archive ( +2 véhicules )':6,'Gagné':4};
+const RES=ST.filter(s=>!['À appeler','Converti','Gagné'].includes(s));
+const sIdx=s=>CMAP[s]!=null?CMAP[s]:Math.max(0,ST.indexOf(s));
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pad=n=>String(n).padStart(2,'0');
@@ -135,7 +136,7 @@ function memberStats(u){
   const L=S.leads.filter(x=>x.owner===u),C=S.calls.filter(x=>x.user_id===u),t=today(),w=addDays(-6);
   const c=countBy(L,x=>x.status);
   return {u,n:L.length,calledToday:C.filter(x=>x.day===t).length,called7:C.filter(x=>x.day>=w).length,
-    inter:c['Intéressé']||0,rdv:c['RDV fixé']||0,conv:c['Converti']||0,todo:c['À appeler']||0,cb:c['Rappeler']||0,touched:L.filter(x=>x.calls>0).length};
+    inter:(c['Intéressé']||0)+(c['Lead qualifié']||0),rdv:(c['RDV fixé']||0)+(c['Démo planifiée']||0),conv:(c['Converti']||0)+(c['Gagné']||0)+(c['Démo reussi (Lancement future)']||0),todo:c['À appeler']||0,cb:c['Rappeler']||0,touched:L.filter(x=>x.calls>0).length};
 }
 function last14(calls){const out=[];for(let i=13;i>=0;i--)out.push({d:addDays(-i),n:0});const m={};out.forEach(o=>m[o.d]=o);calls.forEach(c=>{if(m[c.day])m[c.day].n++});return out}
 function dayChart(a){const mx=Math.max(1,...a.map(x=>x.n));return '<div class="days">'+a.map(x=>'<div title="'+x.d+' : '+x.n+' appels"><b>'+(x.n||'')+'</b><i style="height:'+Math.round(x.n/mx*70)+'px"></i><em>'+x.d.slice(8)+'</em></div>').join('')+'</div>'}
@@ -178,7 +179,7 @@ function viewMine(){
 }
 function board(L){
   const V=search(L),t=today();
-  const order=['À appeler','Messagerie','Rappeler','Intéressé','RDV fixé','Converti','Pas intéressé','Faux numéro'];
+  const order=['Nouveau lead','À appeler','Messagerie','Répond pas','Répond pas (+2 véhicules)','Rappeler','Lead qualifié','Intéressé','Démo planifiée','RDV fixé','Démo reussi (Lancement future)','Démo terminée (1 véhicule)','Démo terminée (+2 véhicules)',"Période d'essai",'Converti','Gagné','Pas intéressé','Abandonné','Archive ( 1 véhicule )','Archive ( +2 véhicules )','Faux numéro'];
   const by=countBy(V,x=>x.status);
   let h='<input class="search" type="search" id="q" placeholder="Chercher une agence, une ville, un numéro…" value="'+esc(S.q)+'"><p class="note" style="margin:0 0 8px">Glisse une carte d’une colonne à l’autre pour changer son étape. Clique sur une carte pour ouvrir le profil.</p><div class="board">';
   order.forEach(st=>{
