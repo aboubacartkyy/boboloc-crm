@@ -47,7 +47,7 @@ const pct=(a,b)=>b?Math.round(a*100/b)+' %':'–';
 
 const S={sb:null,me:null,leads:[],calls:[],team:[],view:'mine',mode:(function(){try{return localStorage.getItem('bb_mode')||'pipe'}catch(e){return 'pipe'}})(),flt:'todo',q:'',lim:40,kl:{},open:null,adding:false,
   aq:'',af:'all',ast:'all',alim:100,imp:null,impTo:'',impSrc:'liste_abou',busy:null,att:{uid:'',region:'',dept:'',n:50},err:'',authTab:'in',msg:'',
-  subs:[],sources:[],origins:[],costs:[],planFor:null,addSet:false,abMonth:'',cfgMonth:'',stMonth:''};
+  subs:[],sources:[],origins:[],costs:[],planFor:null,planVeh:'',addSet:false,abMonth:'',cfgMonth:'',stMonth:''};
 let rafId=0,timer=0;
 const isAdmin=()=>S.me&&S.me.role==='admin';
 const isSetter=()=>S.me&&S.me.role==='setter';
@@ -259,7 +259,7 @@ function demoPanel(L,title,noK){
   const r=rates(L);
   return '<div class="panel"><h3>'+esc(title)+'</h3>'+(noK?'':'<div class="kpis">'+kpi(r.d,'Démos faites')+kpi(r.t,"Période d'essai")+kpi(r.c,'Convertis','hot')+kpi(r.t1,'Taux 1 · converti ÷ essai')+kpi(r.t2,'Taux 2 · converti ÷ démos')+'</div>')+
    '<div class="scroll"><table><thead><tr><th>Démos terminées par véhicules</th><th class="n">Démos</th><th class="n">Convertis</th><th class="n">Taux</th></tr></thead><tbody>'+
-   ['1','2+','future',''].filter(k=>k||r.by['']).map(k=>'<tr><td>'+VL[k]+'</td><td class="n">'+r.by[k]+'</td><td class="n">'+r.byC[k]+'</td><td class="n">'+pct(r.byC[k],r.by[k])+'</td></tr>').join('')+'</tbody></table></div></div>';
+   ['1','2+','future',''].filter(k=>k||r.by['']).map(k=>'<tr><td>'+VL[k]+'</td><td class="n">'+r.by[k]+'</td><td class="n">'+r.byC[k]+'</td><td class="n">'+pct(r.byC[k],r.by[k])+'</td></tr>').join('')+'</tbody></table></div>'+(r.by['']?'<p class="note">« Non précisé » = démo ou conversion sans nombre de véhicules enregistré (par exemple un lead passé directement en Converti). Une démo est comptée une fois ; un lead converti compte aussi comme démo faite.</p>':'')+'</div>';
 }
 const localInput=(iso,z)=>new Intl.DateTimeFormat('sv-SE',{timeZone:ZN[z].tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(iso)).replace(' ','T');
 function zonesHtml(iso,zone){
@@ -379,7 +379,7 @@ function leadCard(l){
 }
 function planModal(){
   const l=S.leads.find(x=>x.id===S.planFor);if(!l)return '';
-  return '<div class="ov" data-act="close"><div class="modal" data-id="'+esc(l.id)+'"><div class="hd"><h2>Convertir '+esc(l.name||'')+'</h2><button class="btn sm" data-act="close">Fermer</button></div><p>Quelle formule a-t-il prise ? (abonnement mensuel)</p><div class="plans">'+PLANS.map(p=>'<button class="btn plan" data-act="plan" data-v="'+p[0]+'"><b>'+p[1]+'</b><span>'+eur(p[2])+' / mois</span></button>').join('')+'</div></div></div>';
+  return '<div class="ov" data-act="close"><div class="modal" data-id="'+esc(l.id)+'"><div class="hd"><h2>Convertir '+esc(l.name||'')+'</h2><button class="btn sm" data-act="close">Fermer</button></div>'+(vehOf(l)?'':'<p>Combien de véhicules a-t-il ?</p><div class="chips">'+['1','2+','future'].map(k=>'<button class="chip" data-act="pveh" data-v="'+k+'" aria-pressed="'+(S.planVeh===k)+'">'+VL[k]+'</button>').join('')+'</div>')+'<p>Quelle formule a-t-il prise ? (abonnement mensuel)</p><div class="plans">'+PLANS.map(p=>'<button class="btn plan" data-act="plan" data-v="'+p[0]+'"><b>'+p[1]+'</b><span>'+eur(p[2])+' / mois</span></button>').join('')+'</div></div></div>';
 }
 function setModal(){
   const f=['name:Nom du prospect','phone:Téléphone','city:Ville','contact:Nom du contact','veh:Nb véhicules'];
@@ -444,11 +444,31 @@ function viewSetters(){
 /* ---------------- admin : conversion, abonnements, paramètres ---------------- */
 function toCheck(m){return S.leads.filter(l=>isConv(l)?(monthOf(l.converted_at)<=m&&!(l.churned_month&&l.churned_month<=m)):(DEMO_ST.includes(l.status)||l.status===TR))}
 const pendingCheck=m=>toCheck(m).filter(l=>!subOf(l.id,m));
+const PCOLS=[['Démo planifiée','Démo planifiée'],['Démo terminée (1 véhicule)','Terminée 1 véh.'],['Démo terminée (+2 véhicules)','Terminée +2 véh.'],['Démo reussi (Lancement future)','Lancement future'],[TR,'Période d’essai'],['Converti','Converti'],['Abandonné','Abandonné']];
+function pipeByPerson(){
+  const P=members().map(p=>[p,S.leads.filter(l=>l.owner===p.id)]).filter(x=>x[1].length);
+  const cell=(L,s)=>L.filter(l=>l.status===s).length;
+  const tot=PCOLS.map(c=>'<td class="n"><b>'+cell(S.leads,c[0])+'</b></td>').join('');
+  return '<div class="panel"><h3>Pipeline des démos par personne</h3><p class="note">Nombre de leads dans chaque statut, pour chaque démonstratrice. Clique sur un nom pour voir son tableau complet.</p><div class="scroll"><table><thead><tr><th>Nom</th>'+PCOLS.map(c=>'<th class="n">'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+
+   (P.length?P.map(([p,L])=>'<tr><td><a class="open" data-act="viewas" data-v="'+esc(p.id)+'" style="cursor:pointer;font-weight:700">'+esc(p.name||p.email)+'</a></td>'+PCOLS.map(c=>'<td class="n">'+cell(L,c[0])+'</td>').join('')+'</tr>').join('')+'<tr><td><b>Total</b></td>'+tot+'</tr>':'<tr><td colspan="8" class="note">Aucune donnée.</td></tr>')+'</tbody></table></div></div>';
+}
+function trialStat(L){const T=L.filter(isTrial),c=T.filter(isConv).length,ec=T.filter(l=>l.status===TR).length,lost=T.length-c-ec;return {n:T.length,ec,c,lost,t1:pct(c,T.length),t3:pct(c,c+lost)}}
+function trialPanel(){
+  const row=(k,L)=>{const r=trialStat(L);return '<tr><td>'+esc(k)+'</td><td class="n">'+r.n+'</td><td class="n">'+r.ec+'</td><td class="n">'+r.c+'</td><td class="n">'+r.lost+'</td><td class="n"><b>'+r.t1+'</b></td><td class="n">'+r.t3+'</td></tr>'};
+  const P=members().map(p=>[p,S.leads.filter(l=>l.owner===p.id)]).filter(x=>x[1].some(isTrial));
+  const mo=[...new Set(S.leads.filter(isTrial).map(l=>monthOf(l.trial_at||l.converted_at||l.updated_at)).filter(Boolean))].sort().reverse();
+  const head=f=>'<div class="scroll"><table><thead><tr><th>'+f+'</th><th class="n">Entrés en essai</th><th class="n">Encore en essai</th><th class="n">Convertis</th><th class="n">Perdus après essai</th><th class="n">Taux essai → converti</th><th class="n">Sur essais terminés</th></tr></thead><tbody>';
+  return '<div class="panel"><h3>Période d’essai → converti</h3><p class="note"><b>Taux essai → converti</b> = convertis ÷ tous ceux qui sont entrés en période d’essai. <b>Sur essais terminés</b> = convertis ÷ (convertis + perdus), sans compter ceux qui sont encore en essai. « Perdus » = sortis de l’essai sans convertir (abandonné ou archivé).</p>'+
+   head('Global')+row('Global',S.leads)+'</tbody></table></div>'+
+   head('Par personne')+(P.length?P.map(([p,L])=>row(p.name||p.email,L)).join(''):'<tr><td colspan="7" class="note">Aucune donnée.</td></tr>')+'</tbody></table></div>'+
+   head('Par mois (entrée en essai)')+(mo.length?mo.map(m=>row(monthLabel(m),S.leads.filter(l=>isTrial(l)&&monthOf(l.trial_at||l.converted_at||l.updated_at)===m))).join(''):'<tr><td colspan="7" class="note">Aucune donnée.</td></tr>')+'</tbody></table></div></div>';
+}
 function viewStats(){
   const R=rates(S.leads),mrr=S.subs.filter(x=>x.month===curMonth()&&x.paid).reduce((a,x)=>a+(+x.amount||0),0);
   let h='<h2>Conversion</h2><p class="sub">Taux de conversion global, par mois, par personne et par source.</p>';
   h+='<div class="kpis">'+kpi(R.d,'Démos faites')+kpi(R.t,"Période d'essai")+kpi(R.c,'Convertis','hot')+kpi(R.t1,'Taux 1 · converti ÷ essai')+kpi(R.t2,'Taux 2 · converti ÷ démos')+kpi(eur(mrr),'Abonnements payés ce mois','hot')+'</div>'+TNOTE;
   h+=demoPanel(S.leads,'Global : démos par nombre de véhicules',true);
+  h+=pipeByPerson()+trialPanel();
   const months=[...new Set(S.leads.filter(isDemo).map(demoMonth).filter(Boolean))].sort().reverse();
   h+='<div class="panel"><h3>Taux de conversion par mois</h3><p class="note">Chaque mois = les leads dont la démo date de ce mois.</p>'+rateTable([['Global',R]].concat(months.map(m=>[monthLabel(m),rates(S.leads.filter(l=>isDemo(l)&&demoMonth(l)===m))])),'Mois')+'</div>';
   const P=members().map(p=>[p,rates(S.leads.filter(l=>l.owner===p.id))]).filter(x=>x[1].n>0).sort((a,b)=>b[1].d-a[1].d);
@@ -721,11 +741,12 @@ app.addEventListener('click',e=>{
   else if(a==='copy')copy(v);
   else if(a==='notif'){try{Notification.requestPermission().then(()=>render())}catch(e){toast('Alertes non disponibles sur cet appareil')}}
   else if(a==='open'&&id){S.open=id;render()}
-  else if(a==='close'){S.open=null;S.adding=false;S.planFor=null;S.addSet=false;render()}
+  else if(a==='close'){S.open=null;S.adding=false;S.planFor=null;S.planVeh='';S.addSet=false;render()}
   else if(a==='addset'){S.addSet=true;render()}
   else if(a==='saveset'){const f={};document.querySelectorAll('#adds [data-k]').forEach(i=>f[i.dataset.k]=i.value);addSetterLead(f)}
   else if(a==='claim'&&id)claim(id);
-  else if(a==='plan'&&S.planFor){const pid=S.planFor;S.planFor=null;setStatus(pid,'Converti',{plan:v,amount:planOf(v)[2]})}
+  else if(a==='pveh'){S.planVeh=v;render()}
+  else if(a==='plan'&&S.planFor){const pid=S.planFor,pv=S.planVeh;S.planFor=null;S.planVeh='';setStatus(pid,'Converti',Object.assign({plan:v,amount:planOf(v)[2]},pv?{demo_veh:pv}:{}))}
   else if(a==='paid'&&id)aboSet(id,true);
   else if(a==='unpaid'&&id)aboSet(id,false);
   else if(a==='vyes'&&id){S.planFor=id;render()}
